@@ -1,0 +1,11 @@
+{
+  "platform": "python",
+  "app": "main",
+  "port": 5000,
+  "args": [
+    "gunicorn",
+    "--workers=1",
+    "--bind=0.0.0.0:5000",
+    "main:app"
+  ]
+}
