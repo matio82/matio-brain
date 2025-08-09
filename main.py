@@ -1,17 +1,21 @@
-# Matio's Core Brain - Version 3.0 (With Memory API)
-# این نسخه قابلیت مدیریت حافظه از راه دور را دارد.
+# Matio's Core Brain - Version 3.1 (Professional Grade by User)
+# این نسخه شامل بهبودهای حرفه‌ای مانند لاگ، اعتبارسنجی و مدیریت خطاست.
 
+import re
+import logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import datetime
-import random
 
 app = Flask(__name__)
-CORS(app)
+# نکته: این تنظیمات CORS برای استقرار نهایی باید تغییر کند تا آدرس اپلیکیشن شما را شامل شود.
+CORS(app) 
 
-# --- پایگاه داده حافظه Matio (حالا این حافظه واقعی است) ---
+# تنظیم logging
+logging.basicConfig(level=logging.INFO)
+
+# --- پایگاه داده حافظه Matio ---
 MEMORY = {
-    "userName": "قربان",
+    "user_name": "قربان",
     "knowledge_library": {
         "protocols": ["صداقت اصل اول است.", "هرگز اطلاعات مالی را صوتی نخوان."],
         "personal_kb": ["به موسیقی راک علاقه دارد."],
@@ -22,10 +26,16 @@ MEMORY = {
 # --- نقطه اصلی ارتباطی برای چت ---
 @app.route('/process_command', methods=['POST'])
 def process_command():
-    data = request.json
-    user_input = data.get('text', '')
-    response_text = generate_simulated_response(user_input)
-    return jsonify({"response_text": response_text})
+    try:
+        data = request.json
+        user_input = data.get('text', '')
+        if not user_input:
+            return jsonify({"error": "ورودی متن الزامی است."}), 400
+        response_text = generate_simulated_response(user_input)
+        return jsonify({"response_text": response_text})
+    except Exception as e:
+        logging.error(f"Error in process_command: {str(e)}")
+        return jsonify({"error": "خطا در پردازش درخواست."}), 500
 
 # --- API های جدید برای مدیریت حافظه ---
 @app.route('/memory', methods=['GET'])
@@ -34,42 +44,71 @@ def get_memory():
 
 @app.route('/memory/add', methods=['POST'])
 def add_memory_item():
-    data = request.json
-    category = data.get('category')
-    item = data.get('item')
-    if category and item and category in MEMORY['knowledge_library']:
+    try:
+        data = request.json
+        category = data.get('category')
+        item = data.get('item')
+        if not category or not item:
+            return jsonify({"status": "error", "message": "اطلاعات ناقص است."}), 400
+        if not isinstance(item, str) or len(item) > 500:
+            return jsonify({"status": "error", "message": "آیتم نامعتبر است."}), 400
+        if category not in MEMORY['knowledge_library']:
+            MEMORY['knowledge_library'][category] = []
         MEMORY['knowledge_library'][category].append(item)
+        logging.info(f"Added item to {category}: {item}")
         return jsonify({"status": "success", "message": "آیتم با موفقیت اضافه شد."})
-    return jsonify({"status": "error", "message": "اطلاعات ناقص یا دسته‌بندی نامعتبر است."}), 400
+    except Exception as e:
+        logging.error(f"Error in add_memory_item: {str(e)}")
+        return jsonify({"status": "error", "message": "خطا در افزودن آیتم."}), 500
 
 @app.route('/memory/delete', methods=['POST'])
 def delete_memory_item():
-    data = request.json
-    category = data.get('category')
-    index = data.get('index')
-    if category and isinstance(index, int) and category in MEMORY['knowledge_library']:
-        try:
-            del MEMORY['knowledge_library'][category][index]
-            return jsonify({"status": "success", "message": "آیتم با موفقیت حذف شد."})
-        except IndexError:
+    try:
+        data = request.json
+        category = data.get('category')
+        index = data.get('index')
+        if not category or not isinstance(index, int):
+            return jsonify({"status": "error", "message": "اطلاعات ناقص یا نامعتبر است."}), 400
+        if category not in MEMORY['knowledge_library']:
+            return jsonify({"status": "error", "message": "دسته‌بندی نامعتبر است."}), 400
+        if not (0 <= index < len(MEMORY['knowledge_library'][category])):
             return jsonify({"status": "error", "message": "اندیس نامعتبر است."}), 400
-    return jsonify({"status": "error", "message": "اطلاعات ناقص یا دسته‌بندی نامعتبر است."}), 400
-
+        deleted_item = MEMORY['knowledge_library'][category].pop(index)
+        logging.info(f"Deleted item from {category}: {deleted_item}")
+        return jsonify({"status": "success", "message": "آیتم با موفقیت حذف شد."})
+    except Exception as e:
+        logging.error(f"Error in delete_memory_item: {str(e)}")
+        return jsonify({"status": "error", "message": "خطا در حذف آیتم."}), 500
 
 def generate_simulated_response(text):
     text_lower = text.lower()
-    # ... (منطق پاسخگویی مانند قبل باقی می‌ماند) ...
-    if "سلام" in text_lower: return f"سلام {MEMORY['userName']} عزیز. خوشحالم که می‌بینمت."
-    if "اسم من" in text_lower:
-        name = text.split(" ").pop().replace(".", "")
-        MEMORY['userName'] = name
-        return f"از آشنایی با شما خوشبختم {name} عزیز. اسمت رو به خاطر می‌سپارم."
-    if "من کیم" in text_lower: return f"البته. شما {MEMORY['userName']} هستید. درسته؟"
     
-    # حالا پاسخ‌ها می‌توانند از حافظه واقعی استفاده کنند
+    if "سلام" in text_lower:
+        return f"سلام {MEMORY['user_name']} عزیز. خوشحالم که می‌بینمت."
+    
+    if "اسم من" in text_lower:
+        name_match = re.search(r"اسم من ([\w]+)", text)
+        if name_match:
+            new_name = name_match.group(1)
+            MEMORY['user_name'] = new_name
+            return f"از آشنایی با شما خوشبختم {new_name} عزیز. اسمت رو به خاطر می‌سپارم."
+        return "متوجه نام شما نشدم. لطفاً دوباره بگویید."
+    
+    if "من کیم" in text_lower:
+        return f"البته. شما {MEMORY['user_name']} هستید. درسته؟"
+    
     if "یادداشت" in text_lower and "دارم" in text_lower:
         note_count = len(MEMORY['knowledge_library']['notes'])
         return f"بله، در حال حاضر {note_count} یادداشت در حافظه من ثبت شده است."
-
+    
+    if "یادداشت" in text_lower and ("لیست" in text_lower or "چی" in text_lower):
+        notes = MEMORY['knowledge_library']['notes']
+        if notes:
+            return f"یادداشت‌های شما: {', '.join(notes)}"
+        return "هیچ یادداشتی ثبت نشده است."
+    
     return "متوجه منظورت شدم. چطور می‌تونم کمکت کنم؟"
 
+# این بخش برای اجرای سرور در Render با Gunicorn استفاده نخواهد شد، اما برای تست محلی عالی است.
+if __name__ == '__main__':
+    app.run(debug=True)
