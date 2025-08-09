@@ -1,66 +1,75 @@
-# Matio's Core Brain - Version 15.0 (The True AI Brain)
-# این نسخه نهایی، کلید API را به صورت امن از محیط می‌خواند و به Gemini متصل می‌شود.
+# Matio's Core Brain - Version 3.0 (With Memory API)
+# این نسخه قابلیت مدیریت حافظه از راه دور را دارد.
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os # کتابخانه برای خواندن متغیرهای محیطی
-import requests
-import json
+import datetime
+import random
 
 app = Flask(__name__)
 CORS(app)
 
-# --- خواندن کلید API به صورت امن از Environment Variables ---
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-
-# --- پایگاه داده حافظه Matio ---
+# --- پایگاه داده حافظه Matio (حالا این حافظه واقعی است) ---
 MEMORY = {
-    "user_profile": { "name": "قربان", "location": "قم، ایران", "age": 21 },
+    "userName": "قربان",
     "knowledge_library": {
-        "protocols": ["صداقت اصل اول است."],
-        "personal_kb": ["کاربر به موسیقی راک علاقه دارد."],
-        "notes": []
-    }
+        "protocols": ["صداقت اصل اول است.", "هرگز اطلاعات مالی را صوتی نخوان."],
+        "personal_kb": ["به موسیقی راک علاقه دارد."],
+        "notes": ["لیست خرید: شیر، نان", "تماس با علی"]
+    },
 }
 
-@app.route('/')
-def check_version():
-    return jsonify({ "status": "online", "brain_version": "15.0 - The True AI Brain" })
-
+# --- نقطه اصلی ارتباطی برای چت ---
 @app.route('/process_command', methods=['POST'])
 def process_command():
-    if not GEMINI_API_KEY:
-        return jsonify({"response_text": "خطای سیستمی: کلید API برای مرکز هوش مصنوعی تنظیم نشده است."}), 500
-        
-    try:
-        data = request.json
-        user_input = data.get('text', '')
-        response_text = get_gemini_response(user_input)
-        return jsonify({"response_text": response_text})
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return jsonify({"response_text": "یک خطای داخلی در مغز من رخ داد."}), 500
+    data = request.json
+    user_input = data.get('text', '')
+    response_text = generate_simulated_response(user_input)
+    return jsonify({"response_text": response_text})
 
-def get_gemini_response(user_text):
-    prompt = f"""
-    You are Matio, a personal AI assistant. Your personality is 50% analytical, 30% caring, and 20% witty.
-    You are speaking with your user, 'Ghorban', a 21-year-old man from Qom, Iran.
-    Your internal memory contains: {json.dumps(MEMORY['knowledge_library'], ensure_ascii=False)}
-    Based on this, provide a natural and intelligent response to the user's message.
-    User's message: "{user_text}"
-    Your response (in Persian):
-    """
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-preview-0514:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+# --- API های جدید برای مدیریت حافظه ---
+@app.route('/memory', methods=['GET'])
+def get_memory():
+    return jsonify(MEMORY['knowledge_library'])
 
-    try:
-        response = requests.post(api_url, headers=headers, json=payload, timeout=25)
-        response.raise_for_status()
-        result = response.json()
-        if 'candidates' in result and result['candidates'][0].get('content', {}).get('parts', []):
-            return result['candidates'][0]['content']['parts'][0]['text'].strip()
-        return "متاسفانه مرکز هوش مصنوعی پاسخ مناسبی نداشت."
-    except requests.exceptions.RequestException as e:
-        print(f"Error calling Gemini API: {e}")
-        return "در حال حاضر در اتصال به مرکز هوش مصنوعی مشکل دارم. لطفاً چند لحظه دیگر دوباره تلاش کنید."
+@app.route('/memory/add', methods=['POST'])
+def add_memory_item():
+    data = request.json
+    category = data.get('category')
+    item = data.get('item')
+    if category and item and category in MEMORY['knowledge_library']:
+        MEMORY['knowledge_library'][category].append(item)
+        return jsonify({"status": "success", "message": "آیتم با موفقیت اضافه شد."})
+    return jsonify({"status": "error", "message": "اطلاعات ناقص یا دسته‌بندی نامعتبر است."}), 400
+
+@app.route('/memory/delete', methods=['POST'])
+def delete_memory_item():
+    data = request.json
+    category = data.get('category')
+    index = data.get('index')
+    if category and isinstance(index, int) and category in MEMORY['knowledge_library']:
+        try:
+            del MEMORY['knowledge_library'][category][index]
+            return jsonify({"status": "success", "message": "آیتم با موفقیت حذف شد."})
+        except IndexError:
+            return jsonify({"status": "error", "message": "اندیس نامعتبر است."}), 400
+    return jsonify({"status": "error", "message": "اطلاعات ناقص یا دسته‌بندی نامعتبر است."}), 400
+
+
+def generate_simulated_response(text):
+    text_lower = text.lower()
+    # ... (منطق پاسخگویی مانند قبل باقی می‌ماند) ...
+    if "سلام" in text_lower: return f"سلام {MEMORY['userName']} عزیز. خوشحالم که می‌بینمت."
+    if "اسم من" in text_lower:
+        name = text.split(" ").pop().replace(".", "")
+        MEMORY['userName'] = name
+        return f"از آشنایی با شما خوشبختم {name} عزیز. اسمت رو به خاطر می‌سپارم."
+    if "من کیم" in text_lower: return f"البته. شما {MEMORY['userName']} هستید. درسته؟"
+    
+    # حالا پاسخ‌ها می‌توانند از حافظه واقعی استفاده کنند
+    if "یادداشت" in text_lower and "دارم" in text_lower:
+        note_count = len(MEMORY['knowledge_library']['notes'])
+        return f"بله، در حال حاضر {note_count} یادداشت در حافظه من ثبت شده است."
+
+    return "متوجه منظورت شدم. چطور می‌تونم کمکت کنم؟"
+
