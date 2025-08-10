@@ -1,17 +1,22 @@
-# Matio's Core Brain - Version 3.1 (Professional Grade by User)
-# این نسخه شامل بهبودهای حرفه‌ای مانند لاگ، اعتبارسنجی و مدیریت خطاست.
+# Matio's Core Brain - Version 17.0 (Professional Grade + Gemini Connected)
+# این نسخه، کد حرفه‌ای شما را به هوش مصنوعی Gemini متصل می‌کند.
 
 import re
 import logging
+import os
+import requests
+import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-# نکته: این تنظیمات CORS برای استقرار نهایی باید تغییر کند تا آدرس اپلیکیشن شما را شامل شود.
 CORS(app) 
 
 # تنظیم logging
 logging.basicConfig(level=logging.INFO)
+
+# --- خواندن کلید API به صورت امن از Environment Variables ---
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 # --- پایگاه داده حافظه Matio ---
 MEMORY = {
@@ -23,7 +28,7 @@ MEMORY = {
     },
 }
 
-# --- نقطه اصلی ارتباطی برای چت ---
+# --- نقطه اصلی ارتباطی ---
 @app.route('/process_command', methods=['POST'])
 def process_command():
     try:
@@ -31,84 +36,80 @@ def process_command():
         user_input = data.get('text', '')
         if not user_input:
             return jsonify({"error": "ورودی متن الزامی است."}), 400
-        response_text = generate_simulated_response(user_input)
+        
+        # --- فرآیند تصمیم‌گیری هوشمند ---
+        # ۱. ابتدا دستورات خاص را بررسی می‌کنیم
+        response_text = handle_specific_commands(user_input)
+        
+        # ۲. اگر دستور خاصی نبود، به سراغ هوش عمومی Gemini می‌رویم
+        if response_text is None:
+            response_text = get_gemini_response(user_input)
+            
         return jsonify({"response_text": response_text})
+        
     except Exception as e:
         logging.error(f"Error in process_command: {str(e)}")
         return jsonify({"error": "خطا در پردازش درخواست."}), 500
 
-# --- API های جدید برای مدیریت حافظه ---
-@app.route('/memory', methods=['GET'])
-def get_memory():
-    return jsonify(MEMORY['knowledge_library'])
-
-@app.route('/memory/add', methods=['POST'])
-def add_memory_item():
-    try:
-        data = request.json
-        category = data.get('category')
-        item = data.get('item')
-        if not category or not item:
-            return jsonify({"status": "error", "message": "اطلاعات ناقص است."}), 400
-        if not isinstance(item, str) or len(item) > 500:
-            return jsonify({"status": "error", "message": "آیتم نامعتبر است."}), 400
-        if category not in MEMORY['knowledge_library']:
-            MEMORY['knowledge_library'][category] = []
-        MEMORY['knowledge_library'][category].append(item)
-        logging.info(f"Added item to {category}: {item}")
-        return jsonify({"status": "success", "message": "آیتم با موفقیت اضافه شد."})
-    except Exception as e:
-        logging.error(f"Error in add_memory_item: {str(e)}")
-        return jsonify({"status": "error", "message": "خطا در افزودن آیتم."}), 500
-
-@app.route('/memory/delete', methods=['POST'])
-def delete_memory_item():
-    try:
-        data = request.json
-        category = data.get('category')
-        index = data.get('index')
-        if not category or not isinstance(index, int):
-            return jsonify({"status": "error", "message": "اطلاعات ناقص یا نامعتبر است."}), 400
-        if category not in MEMORY['knowledge_library']:
-            return jsonify({"status": "error", "message": "دسته‌بندی نامعتبر است."}), 400
-        if not (0 <= index < len(MEMORY['knowledge_library'][category])):
-            return jsonify({"status": "error", "message": "اندیس نامعتبر است."}), 400
-        deleted_item = MEMORY['knowledge_library'][category].pop(index)
-        logging.info(f"Deleted item from {category}: {deleted_item}")
-        return jsonify({"status": "success", "message": "آیتم با موفقیت حذف شد."})
-    except Exception as e:
-        logging.error(f"Error in delete_memory_item: {str(e)}")
-        return jsonify({"status": "error", "message": "خطا در حذف آیتم."}), 500
-
-def generate_simulated_response(text):
+def handle_specific_commands(text):
+    """
+    این تابع، دستورات ساختاریافته را پردازش می‌کند.
+    """
     text_lower = text.lower()
     
-    if "سلام" in text_lower:
-        return f"سلام {MEMORY['user_name']} عزیز. خوشحالم که می‌بینمت."
+    if "یادداشت کن:" in text_lower:
+        try:
+            new_note = text.split(":", 1)[1].strip()
+            if new_note:
+                MEMORY['knowledge_library']['notes'].append(new_note)
+                logging.info(f"Added note: {new_note}")
+                return f"یادداشت شما ثبت شد: '{new_note}'"
+        except IndexError:
+            return "فرمت دستور صحیح نیست."
     
-    if "اسم من" in text_lower:
-        name_match = re.search(r"اسم من ([\w]+)", text)
-        if name_match:
-            new_name = name_match.group(1)
-            MEMORY['user_name'] = new_name
-            return f"از آشنایی با شما خوشبختم {new_name} عزیز. اسمت رو به خاطر می‌سپارم."
-        return "متوجه نام شما نشدم. لطفاً دوباره بگویید."
-    
-    if "من کیم" in text_lower:
-        return f"البته. شما {MEMORY['user_name']} هستید. درسته؟"
-    
-    if "یادداشت" in text_lower and "دارم" in text_lower:
-        note_count = len(MEMORY['knowledge_library']['notes'])
-        return f"بله، در حال حاضر {note_count} یادداشت در حافظه من ثبت شده است."
-    
-    if "یادداشت" in text_lower and ("لیست" in text_lower or "چی" in text_lower):
-        notes = MEMORY['knowledge_library']['notes']
-        if notes:
-            return f"یادداشت‌های شما: {', '.join(notes)}"
-        return "هیچ یادداشتی ثبت نشده است."
-    
-    return "متوجه منظورت شدم. چطور می‌تونم کمکت کنم؟"
+    # اگر هیچ دستور خاصی پیدا نشد
+    return None
 
-# این بخش برای اجرای سرور در Render با Gunicorn استفاده نخواهد شد، اما برای تست محلی عالی است.
+def get_gemini_response(user_text):
+    """
+    این تابع، با ارسال درخواست به Gemini، یک پاسخ هوشمند و طبیعی دریافت می‌کند.
+    """
+    if not GEMINI_API_KEY:
+        logging.error("GEMINI_API_KEY not found in environment variables.")
+        return "خطای سیستمی: کلید API برای مرکز هوش مصنوعی تنظیم نشده است."
+
+    prompt = f"""
+    You are Matio, a personal AI assistant. Your personality is 50% analytical, 30% caring, and 20% witty.
+    You are speaking with your user, '{MEMORY['user_name']}'.
+    Your internal memory (Knowledge Library) contains: {json.dumps(MEMORY['knowledge_library'], ensure_ascii=False)}
+    
+    Based on your personality and memory, provide a natural and intelligent response to the user's message.
+    If the user asks a question you can answer from memory, use the memory. Otherwise, use your general knowledge.
+    
+    User's message: "{user_text}"
+    
+    Your response (in fluent Persian):
+    """
+
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-preview-0514:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        response = requests.post(api_url, headers=headers, json=payload, timeout=25)
+        response.raise_for_status()
+        result = response.json()
+        
+        if 'candidates' in result and result['candidates'][0].get('content', {}).get('parts', []):
+            return result['candidates'][0]['content']['parts'][0]['text'].strip()
+        
+        logging.warning("Gemini response was empty or malformed.")
+        return "متاسفانه مرکز هوش مصنوعی پاسخ مناسبی نداشت."
+        
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error calling Gemini API: {e}")
+        return "در حال حاضر در اتصال به مرکز هوش مصنوعی مشکل دارم. لطفاً چند لحظه دیگر دوباره تلاش کنید."
+
+# این بخش برای اجرای سرور در Render با Gunicorn استفاده نخواهد شد.
 if __name__ == '__main__':
     app.run(debug=True)
